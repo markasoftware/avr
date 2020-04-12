@@ -1,4 +1,6 @@
 clang
 -I/usr/lib/avr/include
 -I/usr/local/lib
--D__AVR_ATtiny85__
+-I/fuck/opensuse/in/the/ass
+-I/usr/avr/sys-root/include
+-D__AVR_ATtiny84__
