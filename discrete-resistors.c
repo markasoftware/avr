@@ -3,13 +3,13 @@
 #include <util/delay.h>
 #include <avr/sleep.h>
 
+#include "discrete-constants.h"
+
 // how many LSB to add to all ADC readings. To be most accurate, you would want
 // to measure sub-LSB offsets, but this isn't a major concern for me. This
 // depends on the AVR chip but shouldn't vary much with things like time or
 // supply voltage.
 #define ADC_CALIBRATE_OFFSET 1
-
-#define R2 5100
 
 static void seg7(unsigned char num) {
 	PORTA |= (num << 2);
@@ -79,16 +79,41 @@ int main() {
 	}
 }
 
+static void recount(unsigned long g_total, int *r1_n, int *r2_n) {
+	*r1_n = G1_GCD_COEF * g_total;
+	*r2_n = G2_GCD_COEF * g_total;
+	int how_many_lcms;
+	if (*r1_n < 0) {
+		how_many_lcms = -*r1_n / G1_LCM_COEF;
+		if (how_many_lcms * G1_LCM_COEF < -*r1_n) {
+			how_many_lcms++;
+		}
+		*r1_n += how_many_lcms * G1_LCM_COEF;
+		*r2_n -= how_many_lcms * G2_LCM_COEF;
+	} else if (*r2_n < 0) {
+		how_many_lcms = -*r2_n / G2_LCM_COEF;
+		if (how_many_lcms * G2_LCM_COEF < -*r2_n) {
+			how_many_lcms++;
+		}
+		*r1_n -= how_many_lcms * G1_LCM_COEF;
+		*r2_n += how_many_lcms * G2_LCM_COEF;
+	}
+}
+
 ISR(ADC_vect) {
 	unsigned adc = ADC + ADC_CALIBRATE_OFFSET;
-	// we don't want to do R2*adc/(1023 - adc) because R2*adc might be a
-	// long. but if we do the division first, the rounding happens, so the
-	// result could be low by up to the value of adc (which may be a lot!
-	// imagine R2=1000 and adc=1001. r1 would be zero, even though our
-	// resistor is actually quite large). Luckily, we can add in the
-	// remainder later! a/b = a//b + a%b/b, and (a*c)//b = a//b + a%b*c
-	// unsigned r1 = R2 / (1023 - adc) * adc + R2 % (1023 - adc) * adc / (1023 - adc);
-	unsigned long r1 = (long) R2 * adc / (1023 - adc);
+	// it's crucially important to round this to the *nearest*, not down.
+	unsigned long g_total = ((unsigned long) (1023 - adc) * G_MULTIPLIER + ((unsigned long)R_DIVIDER * adc / 2))
+		/ ((unsigned long)R_DIVIDER * adc);
 
-	seg7x4(r1);
+	int r1_n, r2_n;
+	for (char i = 1; i < 20; i++) {
+		recount(g_total, &r1_n, &r2_n);
+		if (r1_n + r2_n < 10 && r1_n >= 0 && r2_n >= 0) {
+			seg7x4(r2_n * 100 + r1_n);
+			break;
+		}
+		g_total += i % 2 ? i : -i;
+	}
+
 }
